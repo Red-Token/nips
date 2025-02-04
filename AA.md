@@ -31,13 +31,12 @@ Where:
 
 ## Example 
 
+In this example the user represents a community where the users share and discuss videos around fishing.
+
 ```json
 {
-  // Indication that we are talking about a community user
   "c": "community",
-  // Indicating that this community supports group chats
   "n": "nip29",
-  // Indicating that this community members share video events with each other
   "n": "nip71"
 }
 ```
