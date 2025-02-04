@@ -45,8 +45,15 @@ In this example the user represents a community where the users share and discus
 
 ```json
 {
-  "c": "community",
-  "n": "nip29",
-  "n": "nip71"
+  "content": {
+    "name": "Big Fish",
+    "about": "A fishing community in Main"
+  },
+  "tags": [
+    ["c","community"],
+    ["n","nip29"],
+    ["n","nip52"],
+    ["n","nip71"]
+  ]
 }
 ```
