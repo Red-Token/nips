@@ -60,9 +60,9 @@ Membership Issuance Message:
     {
         kind: 5674
         tags: [
-            e: (multiple) <tag of the Membership Definition Message>
-            e: (optional, multiple) <tag of the Membership Request Message>
-            p: (multiple) <tag of the new member>
+            e: (multiple) <id of the Membership Definition Message> (optional) "def"
+            e: (optional, multiple) <id of the Membership Request Message> "req"
+            p: (multiple) <tag of the new member>   
         ]
         content: { 
             start: (optional) <UTC timestamp of the start of the membership>
