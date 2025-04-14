@@ -1,11 +1,11 @@
 NIP-AB
 ======
 
-The server responds with 401, and a message that indicates that a login is required.
+### Conditional Access to Relays
 
-When the client wants to access a restricted resource and does not have the correct header, the server **must** returns
-a
-401, with an Access Request Challenge Message attached.
+The server responds with 401, and a message that indicates that a login is required. When the client wants to access a
+restricted resource and does not have the correct header, the server **must** returns a 401, with an Access Request
+Challenge Message attached.
 
 The message **should** contain a hint of under what conditions access would be granted, otherwise the client **must**
 assume that a regular login would be accepted.
@@ -150,7 +150,7 @@ Alice pays and answers with a:
         content: <The recite>
     }
 
-Alice can now log in to the relay. The relay issues a 
+Alice can now log in to the relay. The relay issues a
 
     {
         kind: 5670
@@ -159,7 +159,7 @@ Alice can now log in to the relay. The relay issues a
         ]
     }
 
-Alice then answers with a: 
+Alice then answers with a:
 
     {
         kind: 5671
