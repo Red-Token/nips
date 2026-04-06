@@ -33,7 +33,7 @@ The connection flow mirrors NIP-47:
 
 4. The **node service** decrypts the request, executes the operation against the Lightning node, and publishes an encrypted NNC response event (kind `23199`).
 
-5. For methods with deferred outcomes (e.g. channel open/close), the **client** MAY set `"notify": true` in the request. When the operation completes later, the **node service** sends an encrypted NNC notification event (kind `23200`) back to that **client**.
+5. For methods with deferred outcomes (e.g. channel open/close), the **node service** sends an encrypted NNC notification event (kind `23200`) back to the requesting **client** when the operation completes. The **client** MAY set `"notify": false` to suppress this notification.
 
 ## Events
 
@@ -51,7 +51,7 @@ The info event is a replaceable event published by the **node service** on the r
 The content SHOULD be a plaintext string with the supported methods space-separated:
 
 ```
-list_channels open_channel close_channel list_peers connect_peer disconnect_peer get_channel_fees set_channel_fees get_forwarding_history get_pending_htlcs estimate_route_fee query_routes list_network_nodes get_network_stats get_network_node get_network_channel
+list_channels open_channel close_channel list_peers connect_peer disconnect_peer get_channel_fees set_channel_fees get_forwarding_history get_pending_htlcs estimate_route_fee query_routes list_network_nodes get_network_stats get_network_node get_network_channel subscribe_notifications
 ```
 
 ### Request Event (kind 23198)
@@ -190,7 +190,7 @@ Request:
         "private": false,                // whether the channel should be private, optional, default false
         "host": "10.0.0.1:9735",         // peer's host:port, optional (for auto-connect)
         "close_address": "bc1q...",      // cooperative close address, optional
-        "notify": true                   // request a notification when the channel is confirmed, optional, default false
+        "notify": true                   // send notification when the channel is confirmed, optional, default true
     }
 }
 ```
@@ -220,7 +220,7 @@ Request:
         "id": "abc123",                  // channel ID, required
         "force": false,                  // force close, optional, default false
         "close_address": "bc1q...",      // address to send funds to, optional
-        "notify": true                   // request a notification when the close is confirmed, optional, default false
+        "notify": true                   // send notification when the close is confirmed, optional, default true
     }
 }
 ```
@@ -675,7 +675,48 @@ Errors:
 
 ## Notifications
 
-Notifications are sent only when the client sets `"notify": true` in the original request. The **node service** sends the notification back to the requesting client once the deferred operation completes. Payment-related notifications (`payment_received`, `payment_sent`) belong to NIP-47 (NWC).
+### Notification Model
+
+**Default behavior**: A controller is notified about deferred outcomes of operations it initiates. This mirrors the NIP-47 notification model.
+
+- `open_channel` → `channel_opened` when the channel is confirmed on-chain
+- `close_channel` → `channel_closed` when the close is confirmed on-chain
+
+**Opt-out**: Set `"notify": false` in the request to suppress the notification for that specific operation.
+
+**Subscription**: Controllers that need to monitor _all_ channel events (e.g. a dashboard that didn't initiate the open/close) should use the `subscribe_notifications` method.
+
+#### `subscribe_notifications`
+
+Request:
+```jsonc
+{
+    "method": "subscribe_notifications",
+    "params": {
+        "types": ["channel_opened", "channel_closed"], // notification types to subscribe to, required
+    }
+}
+```
+
+To unsubscribe, call with an empty types array:
+```jsonc
+{
+    "method": "subscribe_notifications",
+    "params": {
+        "types": [], // empty array unsubscribes from all
+    }
+}
+```
+
+Response:
+```jsonc
+{
+    "result_type": "subscribe_notifications",
+    "result": {}
+}
+```
+
+Payment-related notifications (`payment_received`, `payment_sent`) belong to NIP-47 (NWC).
 
 ### `channel_opened`
 
