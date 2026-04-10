@@ -51,7 +51,7 @@ The info event is a replaceable event published by the **node service** on the r
 The content SHOULD be a plaintext string with the supported methods space-separated:
 
 ```
-list_channels open_channel close_channel list_peers connect_peer disconnect_peer get_channel_fees set_channel_fees get_forwarding_history get_pending_htlcs estimate_route_fee query_routes list_network_nodes get_network_stats get_network_node get_network_channel subscribe_notifications
+list_channels open_channel close_channel list_peers connect_peer disconnect_peer get_channel_fees set_channel_fees get_forwarding_history get_pending_htlcs query_routes list_network_nodes get_network_stats get_network_node get_network_channel subscribe_notifications
 ```
 
 ### Request Event (kind 23198)
@@ -453,34 +453,7 @@ Response:
 }
 ```
 
-#### `estimate_route_fee`
-
-Description: Estimates the fee for routing a payment to a destination.
-
-Request:
-```jsonc
-{
-    "method": "estimate_route_fee",
-    "params": {
-        "destination": "02abc...",       // destination pubkey, required
-        "amount": 100000                 // payment amount in msats, required
-    }
-}
-```
-
-Response:
-```jsonc
-{
-    "result_type": "estimate_route_fee",
-    "result": {
-        "fee": 150,                      // estimated fee in msats
-        "time_lock_delay": 40            // estimated CLTV delta
-    }
-}
-```
-
-Errors:
-- `NOT_FOUND`: No route found to the destination.
+**Note:** Fee estimation methods (`estimate_onchain_fees` and `estimate_routing_fees`) are defined in [NIP-47](47.md) as wallet operations.
 
 #### `query_routes`
 
