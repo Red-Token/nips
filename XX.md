@@ -199,11 +199,11 @@ Response:
 ```jsonc
 {
     "result_type": "open_channel",
-    "result": {
-        "funding_txid": "abc123..."      // funding transaction ID
-    }
+    "result": {}
 }
 ```
+
+The response confirms the channel open was accepted. The `funding_txid` is delivered asynchronously via the `channel_opened` notification (kind 23200) once the funding transaction is broadcast.
 
 Errors:
 - `CHANNEL_FAILED`: The channel could not be opened. This may be due to insufficient funds, peer refusing, or similar.
@@ -229,11 +229,11 @@ Response:
 ```jsonc
 {
     "result_type": "close_channel",
-    "result": {
-        "closing_txid": "def456..."      // closing transaction ID
-    }
+    "result": {}
 }
 ```
+
+The response confirms the channel close was accepted. The `closing_txid` is delivered asynchronously via the `channel_closed` notification (kind 23200) once the closing transaction is confirmed.
 
 Errors:
 - `NOT_FOUND`: The channel was not found.
