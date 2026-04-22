@@ -109,6 +109,10 @@ The content is encrypted with [NIP-44](44.md) and is a JSON object:
 }
 ```
 
+### Units
+
+Follows the NIP-47 rule: every field whose value is denominated in sats MUST use the `_sats` suffix in its name; every amount-bearing field without a `_sats` suffix is in msats. On-chain physical values (funding tx amount, on-chain fee rates) take `_sats`; Lightning values (channel balances, capacity, HTLCs, forwarding fees, network-graph capacity) stay plain.
+
 ### Error Codes
 
 - `RATE_LIMITED`: The client is sending commands too fast. It should retry in a few seconds.
@@ -185,8 +189,8 @@ Request:
     "method": "open_channel",
     "params": {
         "pubkey": "02abc...",             // peer's pubkey, required
-        "amount": 1000000,               // channel capacity in sats, required
-        "push_amount": 0,                // amount to push to peer in sats, optional, default 0
+        "amount_sats": 1000000,          // channel capacity in sats, required
+        "push_amount": 0,                // amount to push to peer in msats, optional, default 0
         "private": false,                // whether the channel should be private, optional, default false
         "host": "10.0.0.1:9735",         // peer's host:port, optional (for auto-connect)
         "close_address": "bc1q...",      // cooperative close address, optional
@@ -348,10 +352,10 @@ Response:
                 "id": "abc123",              // channel ID
                 "short_channel_id": "800000x1x0", // short channel ID, optional
                 "peer_pubkey": "02abc...",    // remote peer's pubkey
-                "base_fee_msat": 1000,       // base fee in msats
+                "base_fee": 1000,            // base fee in msats
                 "fee_rate": 1,               // proportional fee rate in millionths (ppm)
-                "min_htlc_msat": 1000,       // minimum HTLC size in msats, optional
-                "max_htlc_msat": 500000000   // maximum HTLC size in msats, optional
+                "min_htlc": 1000,            // minimum HTLC size in msats, optional
+                "max_htlc": 500000000        // maximum HTLC size in msats, optional
             }
         ]
     }
@@ -368,10 +372,10 @@ Request:
     "method": "set_channel_fees",
     "params": {
         "id": "abc123",                  // channel ID, optional (omit to apply to all channels)
-        "base_fee_msat": 1000,           // base fee in msats, optional
+        "base_fee": 1000,                // base fee in msats, optional
         "fee_rate": 1,                   // proportional fee rate in ppm, optional
-        "min_htlc_msat": 1000,           // minimum HTLC size in msats, optional
-        "max_htlc_msat": 500000000       // maximum HTLC size in msats, optional
+        "min_htlc": 1000,                // minimum HTLC size in msats, optional
+        "max_htlc": 500000000            // maximum HTLC size in msats, optional
     }
 }
 ```
@@ -622,19 +626,19 @@ Response:
         "node1_pubkey": "02abc...",            // first node's pubkey
         "node2_pubkey": "03def...",            // second node's pubkey
         "node1_policy": {                      // first node's routing policy, optional
-            "base_fee_msat": 1000,
+            "base_fee": 1000,
             "fee_rate": 1,
-            "min_htlc_msat": 1000,
-            "max_htlc_msat": 500000000,
+            "min_htlc": 1000,
+            "max_htlc": 500000000,
             "time_lock_delta": 40,
             "disabled": false,
             "last_update": 1703225000
         },
         "node2_policy": {                      // second node's routing policy, optional
-            "base_fee_msat": 500,
+            "base_fee": 500,
             "fee_rate": 2,
-            "min_htlc_msat": 1000,
-            "max_htlc_msat": 500000000,
+            "min_htlc": 1000,
+            "max_htlc": 500000000,
             "time_lock_delta": 40,
             "disabled": false,
             "last_update": 1703224000
