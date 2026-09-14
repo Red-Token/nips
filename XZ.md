@@ -228,6 +228,48 @@ Either party MAY abort before paying. After the taker has paid, an abort
 is meaningless — the outcome is decided by settlement and timeout, not by
 messages — and a party that has paid MUST NOT rely on one being honoured.
 
+## What the maker MUST verify before confirming
+
+1. **The maker can complete the trade.** A maker MUST NOT issue a counter
+   invoice for a trade it cannot deliver — the outbound liquidity in the
+   `sell` asset must be available at the moment of confirming, not merely
+   advertised.
+
+   **Avoiding overspend is the maker's job**, and it is theirs because
+   they are the only party who can do it. The taker cannot see the
+   maker's channel balances, cannot know what other trades are in flight,
+   and has no way to reason about capacity that is being consumed by
+   someone else.
+
+2. **Both amounts match the live offer.** `sell_msat` equals the amount
+   in the destination invoice; `buy_msat` is what the offer's price
+   yields for it. A maker MUST abort on any mismatch and MUST NOT issue a
+   counter invoice for an amount the taker did not state.
+
+3. **The offer is still live** — not expired, not withdrawn, and not
+   revised since the taker read it.
+
+### Volume is advertised, not reserved
+
+`volume` in an offer states what the maker could deliver when they
+published. It is **not a reservation**, and accepting an offer claims
+nothing. Two takers may accept the same volume simultaneously; the maker
+confirms whichever it can serve and aborts the other.
+
+That is wasteful — the loser has done work for nothing — and it is still
+correct, because the alternative is worse:
+
+> **Reserving volume would hand the taker the option this design exists
+> to remove.** If accepting held capacity, a taker could accept several
+> offers across several makers, pay the one that moved in their favour,
+> and let the rest lapse — having tied up other people's liquidity for
+> free. The maker would be writing an option, unpriced, to anyone who
+> sends a message.
+
+Aborting a taker costs them a round trip. Reserving for them costs the
+maker real capacity. The asymmetry is deliberate, and it is why a maker
+commits at `confirm` and not before.
+
 ## What the taker MUST verify before paying
 
 This section is the protocol. The message formats are how material moves;
@@ -372,12 +414,6 @@ Nothing after `confirm` passes over the relay.
 2. **Amounts are millisatoshis on both sides.** Unexamined for assets
    whose smallest unit is not a satoshi.
 
-3. **Volume is a depleting quantity, and offers are replaceable events.**
-   Two takers acting on the same offer simultaneously may both be
-   accepted for volume that only one of them can have. The maker aborts
-   the loser, which is correct but wasteful, and nothing here reserves
-   volume between `accept` and `confirm`.
-
-4. **Discovery.** An offer is only as findable as the relays it reaches.
+3. **Discovery.** An offer is only as findable as the relays it reaches.
    How a taker finds relays carrying offers is the whole of the
    market-making problem and is deliberately out of scope.
