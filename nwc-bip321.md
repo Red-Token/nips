@@ -183,5 +183,6 @@ Errors: as NWC-321.
 - The on-chain payments specification defines `pay_onchain` for a wallet
   with no channels at all — which cannot implement NWC-321's `pay`, and so
   cannot implement this either.
-- Both additions here have been proposed to NWC-321 itself. If they are
+- Both additions here are **written as proposals to NWC-321 and have not
+  been sent** — see [`proposals/`](proposals/). If they are sent and
   adopted there, this document is withdrawn rather than maintained.
