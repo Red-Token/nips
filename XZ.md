@@ -208,25 +208,37 @@ The decrypted — here, merely parsed — content:
 
 ```jsonc
 {
-  "sell":   { "asset": "btc", "network": "signet", "chain": "<chain identifier>" },
-  "buy":    { "asset": "xbt", "network": "signet", "chain": "<chain identifier>" },
   "price":  2083333,          // buy-units per million sell-units
-  "volume": 500000000,        // msat of `sell`, available now
-  "min":    1000              // msat of `sell`, smallest trade
+  "volume": 500000000,        // msat of the sell asset, available now
+  "min":    1000              // msat of the sell asset, smallest trade
 }
 ```
 
-* `sell` and `buy` are asset references, from the **maker's** side. A
-  maker selling BTC for XBT is equally a maker buying XBT with BTC; which
-  one is `sell` is a matter of direction, and a complete market is offers
-  in **both directions**, not two kinds of order.
+* Which assets, and in which direction, is the `o` tag. A maker selling
+  BTC for XBT is equally a maker buying XBT with BTC; a complete market
+  is offers in **both directions**, not two kinds of order.
 * `price` is parts per million, to avoid floating point. An
   implementation MUST perform the conversion in integer arithmetic.
 * `volume` is what the maker can deliver **now**, bounded by their
-  outbound liquidity in the `sell` asset. It **depletes as trades
+  outbound liquidity in the sell asset. It **depletes as trades
   complete**.
-* Both asset references MUST be complete. An offer missing either, or
-  missing any of their three elements, is malformed and MUST be ignored.
+
+**The offer does not name chains.** It advertises a pair and a price;
+which chains are meant is settled in the negotiation, where it binds. The
+taker states the two chains in `accept`, the maker confirms or aborts,
+and the taker verifies the counter invoice against what was confirmed.
+
+> **Why chains belong in the negotiation and not the advertisement.** A
+> node exists on exactly one network, so a maker's chains are a property
+> of the maker rather than of any one offer — repeating them in every
+> offer states the same fact many times and gives it more authority than
+> an advertisement deserves. What protects the taker is checking the
+> counter invoice, and that check happens against `confirm`, not against
+> something read earlier.
+>
+> The cost is a taker who accepts an offer from a maker trading a
+> different signet and is aborted. That is a round trip, and it is the
+> same round trip the coarse `o` filter already implies.
 
 ### Finding offers
 
@@ -292,8 +304,9 @@ advertised in an offer would be an unverified hint that a taker might
 treat as authoritative, and the taker either already has a channel to the
 maker or does not; naming it changes neither.
 
-An offer is an **invitation, not a commitment**. The maker is bound by
-nothing until they issue a counter invoice.
+An offer is an **invitation, not a commitment**. It names no chains, no
+node and no expiry, and the maker is bound by nothing until they issue a
+counter invoice.
 
 ### Trade message — kind `23204`
 
@@ -335,9 +348,10 @@ The decrypted content is a JSON object with a `type`:
 }
 ```
 
-Both asset references MUST be restated in full and MUST match the offer. The
-taker is asserting which two networks it believes it is trading between,
-and a maker that disagrees MUST abort rather than interpret.
+Both asset references MUST be complete. **This is where the chains enter
+the protocol** — the offer did not name them. The taker is asserting which
+two networks it believes it is trading between, and a maker that trades
+different ones MUST abort rather than interpret.
 
 The taker states **both** amounts. `sell_msat` MUST equal the amount in
 the destination invoice, and `buy_msat` MUST be what the offer's price
@@ -366,11 +380,15 @@ taker did not state.
 }
 ```
 
-`buy` names the network the counter invoice is on, and MUST match
-the offer. It is carried explicitly because **the invoice cannot be
-trusted to say so** — a signet invoice's `lnsb` prefix is shared by every
-signet, so the taker cannot tell from the invoice alone which chain it
-would be paying on.
+`buy` names the network the counter invoice is on, and MUST match the
+`buy` the taker stated in `accept`. It is carried explicitly because
+**the invoice cannot be trusted to say so** — a signet invoice's `lnsb`
+prefix is shared by every signet, so the taker cannot tell from the
+invoice alone which chain it would be paying on.
+
+A maker that trades a different chain from the one the taker named MUST
+abort. Confirming with a `buy` the taker did not ask for is how a taker
+ends up paying on a chain they did not choose.
 
 The counter invoice MUST be a **hold invoice**. A maker who issues an
 ordinary invoice will have it settled on receipt, before they hold `S`,
@@ -410,10 +428,10 @@ messages — and a party that has paid MUST NOT rely on one being honoured.
 3. **The offer is still live** — not withdrawn, and not revised since the
    taker read it.
 
-4. **The chain identifiers match the offer**, and the destination invoice
-   is on the `sell` network. A maker MUST NOT pay an invoice whose
-   network it has not verified, and MUST NOT rely on the invoice's
-   human-readable prefix to establish it.
+4. **The chains the taker named are the chains the maker trades**, and
+   the destination invoice is on the sell chain. A maker MUST NOT pay an
+   invoice whose network it has not verified, and MUST NOT rely on the
+   invoice's human-readable prefix to establish it.
 
 ### Volume is advertised, not reserved
 
@@ -453,10 +471,11 @@ these are the rules that make moving it safe.
 3. **The counter invoice is a hold invoice.** An invoice that settles on
    receipt gives the maker the taker's funds before `S` exists.
 
-4. **The counter invoice is on the `buy` network**, verified against the
-   chain identifier and not against the invoice prefix. A taker holding
-   channels on only one network will find a wrong-chain invoice
-   unpayable; a taker holding several could pay on the wrong one.
+4. **The confirmed `buy` is the `buy` the taker stated**, and the counter
+   invoice is on that chain — verified against the chain identifier, not
+   against the invoice prefix. A taker holding channels on only one
+   network will find a wrong-chain invoice unpayable; a taker holding
+   several could pay on the wrong one.
 
 5. **The timelock rule below holds.**
 
