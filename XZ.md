@@ -343,7 +343,6 @@ The decrypted content is a JSON object with a `type`:
   "sell": { "asset": "btc", "network": "signet", "chain": "<chain identifier>" },
   "buy":  { "asset": "xbt", "network": "signet", "chain": "<chain identifier>" },
   "destination_invoice": "lnbc...",
-  "sell_msat": 120000,      // what the destination is owed
   "buy_msat": 250000        // what the taker expects to pay
 }
 ```
@@ -353,15 +352,24 @@ the protocol** — the offer did not name them. The taker is asserting which
 two networks it believes it is trading between, and a maker that trades
 different ones MUST abort rather than interpret.
 
-The taker states **both** amounts. `sell_msat` MUST equal the amount in
-the destination invoice, and `buy_msat` MUST be what the offer's price
-yields for it.
+**The destination invoice MUST specify an amount.** An amountless BOLT11
+invoice would leave the maker free to pay anything, and there would be
+nothing to price the trade against. A maker MUST reject an accept whose
+destination invoice carries no amount.
 
-> **Why the taker restates a number the maker could compute.** It makes a
-> disagreement about the price impossible to carry forward silently. If
-> the offer moved between publication and acceptance, or either side
-> rounds differently, the mismatch surfaces here — in a message that
-> costs nothing — rather than in an invoice for the wrong amount.
+That amount is not restated here — it is in the invoice, and the invoice
+is what the maker will pay.
+
+`buy_msat` is not in any invoice and is the one number the taker must
+state: **what they believe the price makes it.** The maker compares it
+against their own computation and aborts on a mismatch.
+
+> **Why `buy_msat` earns its place when the amount does not.** The maker
+> does not know which version of the offer the taker read. If the price
+> moved between publication and acceptance, or the two sides round the
+> parts-per-million division differently, `buy_msat` is where that
+> surfaces — cheaply, before an invoice exists. The destination amount
+> carries no such information: it is a fact the maker can read.
 
 A maker MUST verify both amounts against the live offer and MUST abort on
 any mismatch. A maker MUST NOT issue a counter invoice for an amount the
@@ -373,18 +381,19 @@ taker did not state.
 {
   "type": "confirm",
   "buy": { "asset": "xbt", "network": "signet", "chain": "<chain identifier>" },
-  "counter_invoice": "lnsb...",
-  "buy_msat": 250000,
-  "payment_hash": "<H, hex>",
-  "cltv_expiry": 144
+  "counter_invoice": "lnsb..."
 }
 ```
 
-`buy` names the network the counter invoice is on, and MUST match the
-`buy` the taker stated in `accept`. It is carried explicitly because
-**the invoice cannot be trusted to say so** — a signet invoice's `lnsb`
-prefix is shared by every signet, so the taker cannot tell from the
-invoice alone which chain it would be paying on.
+Nothing else is carried. The amount, the payment hash and the final CLTV
+are all in the counter invoice, and the invoice is what the taker pays —
+restating them would create fields that can disagree with it, and a rule
+about which wins.
+
+`buy` is the exception because **the invoice genuinely cannot say it**: a
+signet invoice's `lnsb` prefix is shared by every signet.
+
+`buy` MUST match the `buy` the taker stated in `accept`.
 
 A maker that trades a different chain from the one the taker named MUST
 abort. Confirming with a `buy` the taker did not ask for is how a taker
@@ -420,10 +429,11 @@ messages — and a party that has paid MUST NOT rely on one being honoured.
    and has no way to reason about capacity that is being consumed by
    someone else.
 
-2. **Both amounts match the live offer.** `sell_msat` equals the amount
-   in the destination invoice; `buy_msat` is what the offer's price
-   yields for it. A maker MUST abort on any mismatch and MUST NOT issue a
-   counter invoice for an amount the taker did not state.
+2. **`buy_msat` is what the live offer's price yields** for the amount in
+   the destination invoice. A maker MUST abort on a mismatch and MUST NOT
+   issue a counter invoice for an amount the taker did not state — a
+   taker who is invoiced for more than they agreed has no way to tell
+   whether the price moved or the maker is helping themselves.
 
 3. **The offer is still live** — not withdrawn, and not revised since the
    taker read it.
@@ -503,8 +513,9 @@ expiry(counter invoice HTLC)  >  expiry(destination invoice HTLC)  +  Δ
 > wrong loses nothing.
 
 A maker MUST verify this before paying the destination invoice, and MUST
-abandon the trade if it does not hold. The `cltv_expiry` field in
-`confirm` exists so the taker knows what the maker will require.
+abandon the trade if it does not hold. The requirement is expressed in
+the counter invoice's own final-CLTV field, which is where a taker's node
+will read it, rather than restated in the message.
 
 ## Failure modes
 
