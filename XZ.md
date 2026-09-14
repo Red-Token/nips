@@ -570,6 +570,33 @@ A maker MUST still abandon the trade if the rule is violated at payment
 time — a route may have changed — but that is a fallback, not the
 mechanism.
 
+## A minimal implementation
+
+Most of what is above protects a taker from a maker they do not know. A
+first implementation — a demo, or a deployment where both sides are the
+same operator — needs only:
+
+1. The maker publishes an offer.
+2. The taker sends `accept` with the destination invoice.
+3. The maker replies with `confirm` and a hold invoice carrying the same
+   payment hash.
+4. The taker pays it. The maker pays the destination. The secret comes
+   back and the maker settles.
+
+**The taker may simply pay what it is invoiced.** Checking the amount
+against the price is the taker's own protection, and a taker who trusts
+the maker — because it is them — loses nothing by skipping it. The
+atomicity does not depend on it: the taker's funds cannot move unless the
+destination was paid, whatever the amounts were.
+
+What is **not** optional even in a demo is the maker's timelock: it is
+the maker's own money at risk, and getting it wrong loses funds rather
+than merely paying over the odds.
+
+> The rest is what turns a working demo into something a stranger can
+> use. It is worth having written down before it is needed, and worth
+> leaving out of a first build.
+
 ## Failure modes
 
 | Situation | Outcome |
