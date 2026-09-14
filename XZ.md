@@ -197,6 +197,8 @@ publishing again under the same `d`.
   "pubkey": "<maker>",
   "tags": [
     ["d", "<offer id>"],
+    ["t", "btc-xbt"],                                  // coarse pair, filterable
+    ["t", "<sell chain>-<buy chain>"],                 // exact pair, filterable
     ["sell", "btc", "signet", "<chain identifier>"],   // what the maker delivers
     ["buy",  "xbt", "signet", "<chain identifier>"],   // what the maker is paid in
     ["price", "2083333", "ppm"],      // buy-units per million sell-units
@@ -218,6 +220,37 @@ publishing again under the same `d`.
   complete**, and a maker SHOULD republish as it does.
 * Both `sell` and `buy` MUST carry a chain identifier. An offer without
   one is malformed and MUST be ignored.
+
+### Finding offers
+
+**Only single-letter tags are filterable.** `sell` and `buy` cannot be
+queried, so an offer MUST also carry `t` tags that can be:
+
+| Tag | Value | Use |
+|---|---|---|
+| `t` | `<sell asset>-<buy asset>` | coarse — every `btc-xbt` offer on any network |
+| `t` | `<sell chain>-<buy chain>` | exact — that pair of chains and no other |
+
+Both are **directional**: an offer selling BTC for XBT is `btc-xbt`, and
+the opposite offer is `xbt-btc`. A taker wants one direction and should
+not have to discard the other.
+
+```jsonc
+{ "kinds": [30200], "#t": ["btc-xbt"] }                        // browsing
+{ "kinds": [30200], "#t": ["0014868a...-0014eb5d..."] }        // exact
+```
+
+The exact form is long — a chain identifier is forty hex characters for a
+single-key signet and rather more for a multisig one — and that is the
+price of a filter that cannot over-match. A client that knows which
+chains it trades SHOULD use it.
+
+> **Filter coarsely, verify precisely.** A `t` tag is a hint a relay can
+> index; it is not evidence. An implementation MUST verify the `sell` and
+> `buy` tags of every offer it receives, whichever filter fetched it, and
+> MUST NOT treat a matching `t` as confirmation that an offer is for the
+> chains it wanted. The tag is chosen by the maker and a relay does not
+> check it.
 
 **The offer names no node.** The counter invoice does — a BOLT11 invoice
 carries its destination — and that is the binding statement. A node
