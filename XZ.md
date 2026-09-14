@@ -233,11 +233,50 @@ The decrypted — here, merely parsed — content:
 * Which assets, and in which direction, is the `o` tag. A maker selling
   BTC for XBT is equally a maker buying XBT with BTC; a complete market
   is offers in **both directions**, not two kinds of order.
-* `price` is parts per million, to avoid floating point. An
-  implementation MUST perform the conversion in integer arithmetic.
+* `price` is parts per million, to avoid floating point, and is
+  **all-in**. See below.
 * `volume` is what the maker can deliver **now**, bounded by their
   outbound liquidity in the sell asset. It **depletes as trades
   complete**.
+
+### The price is everything the taker pays
+
+The counter invoice's amount is exactly what the price yields for the
+destination amount:
+
+```
+buy_msat = ceil( sell_msat × price / 1_000_000 )
+```
+
+**A maker MUST NOT charge anything beyond this.** There is no fee field,
+no spread stated separately, and nothing added at confirm time. Whatever
+the maker's costs are — routing to the destination, the capital tied up,
+the risk carried — they are priced into `price` before the offer is
+published.
+
+That is what makes the taker's check possible. The taker computes the
+same number from the same two inputs and refuses an invoice that differs.
+A protocol with a separate fee, or with costs added later, gives the
+taker nothing to compare against and turns verification into trust.
+
+It also means the taker can work out what they are being charged: compare
+`price` against whatever they consider the true rate, and the difference
+is the maker's margin. Whether that margin is reasonable is a question
+for the market, but it is at least **visible before accepting**, in one
+number.
+
+> **Rounding is specified because it must be.** The division is integer,
+> so an unspecified direction means two implementations disagreeing by a
+> millisatoshi and the taker's check failing on a trade both sides
+> intended. It rounds **up**: deterministic, and in the direction that
+> does not let a systematic remainder drain the maker.
+
+**The maker bears routing cost, and cannot know it in advance.** When the
+offer is published the destination is unknown; the maker is pricing an
+average. If a particular destination turns out to be expensive to reach,
+the maker absorbs it — or aborts at `accept`, having seen the invoice.
+Aborting for that reason is legitimate, and it is why an offer is an
+invitation rather than a commitment.
 
 **The offer does not name chains.** It advertises a pair and a price;
 which chains are meant is settled in the negotiation, where it binds. The
@@ -466,10 +505,11 @@ these are the rules that make moving it safe.
    counter invoice buys nothing. This is the single check that makes the
    trade atomic, and it is the one an implementation must never skip.
 
-2. **The counter invoice's amount is what the offer's price yields** for
-   the destination amount. This is the taker's only defence against being
-   invoiced for more than was advertised, and it MUST be checked against
-   the offer the taker read — the one its `e` tag named.
+2. **The counter invoice's amount is exactly
+   `ceil(sell_msat × price / 1_000_000)`**, computed from the offer the
+   `e` tag named. This is the taker's only defence against being invoiced
+   for more than was advertised — there is no fee to allow for, so any
+   difference at all is a discrepancy.
 
 3. **The counter invoice is a hold invoice.** An invoice that settles on
    receipt gives the maker the taker's funds before `S` exists.
