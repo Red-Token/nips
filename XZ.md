@@ -633,6 +633,19 @@ expiry(counter invoice HTLC)  >  expiry(destination invoice HTLC)  +  Δ
 > paid. A maker who gets this wrong loses money; a taker who gets it
 > wrong loses nothing.
 
+### How the maker knows what to set
+
+The route's CLTV delta comes from the maker's own wallet, via
+[`quote_payment`](nwc-route.md) — a local computation over the channel
+graph, not a query to anyone. The maker asks its own node what paying the
+destination invoice would cost and consume, and sizes both the price and
+the timelock from the answer.
+
+**It is an estimate.** Gossip carries capacities, not balances, so a route
+that looks viable may fail. A maker quotes a firm price against an
+uncertain cost and prices that uncertainty into the spread — which is why
+a quotation carries a short expiry.
+
 ### The maker sets this, rather than checking it
 
 The maker does not have to hope the taker's HTLC arrives with enough life
