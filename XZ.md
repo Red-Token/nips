@@ -176,16 +176,14 @@ Four messages, then two payments.
    trade, expressed as a hold invoice for the amount it will accept,
    carrying **the same payment hash as the destination invoice**.
 
-5. The **taker** **accepts**. The trade is agreed.
+5. The **taker** pays the quoted invoice. **Paying is accepting.** It
+   holds: the maker cannot settle it without `S`.
 
-6. The **taker** pays the quoted invoice. It holds: the maker cannot
-   settle it without `S`.
-
-7. The **maker** pays the destination invoice. The destination settles
+6. The **maker** pays the destination invoice. The destination settles
    it, because that is how she gets paid, and `S` is revealed to the
    maker as the payment completes.
 
-8. The **maker** settles the quoted invoice with `S`.
+7. The **maker** settles the quoted invoice with `S`.
 
 ### Why a quotation and not just an offer
 
@@ -200,8 +198,19 @@ would have to advertise an average and absorb every trade that was worse
 than average — which is a tax on takers who are cheap to reach, paid to
 subsidise ones who are not.
 
-Accepting seals it. The trade is agreed at that point, and paying is
-settlement rather than agreement.
+### There is no accept message
+
+Paying the quoted invoice is the acceptance. A separate message would add
+a round trip and tell the maker nothing they could act on: a taker who
+accepts and then does not pay leaves the maker exactly where an
+unanswered quote does, so the maker's real trigger is the held HTLC
+either way.
+
+> **What would bring one back.** An explicit acceptance is worth its round
+> trip only when the maker must commit something before being paid —
+> reserving scarce liquidity, or beginning work that costs them. Nothing
+> here does: the maker issues an invoice, which costs nothing, and acts
+> when the money arrives.
 
 The taker's funds can only move if the maker holds `S`, and `S` only
 exists in the open once the destination has been paid. **The taker
@@ -406,7 +415,6 @@ The decrypted content is a JSON object with a `type`:
 |--------|---------|---------|
 | `rfq` | taker | the destination invoice |
 | `quote` | maker | a hold invoice at a firm price |
-| `accept` | taker | nothing; the `e` tag seals which quote |
 | `abort` | either | a reason |
 
 #### `rfq`
@@ -453,20 +461,6 @@ and a taker MUST NOT pay one.
 > **The maker is bound by this and by nothing before it.** An offer
 > commits nobody. A quotation is a price the maker will trade at, for as
 > long as it says, for the specific trade it was asked about.
-
-#### `accept`
-
-```jsonc
-{ "type": "accept" }
-```
-
-Nothing but the type. **The `e` tag is the message** — it names the quote
-being sealed, and no other quote can be meant.
-
-The trade is agreed here. Paying is settlement, not agreement, and the
-separation is why a maker knows a quotation was taken before any funds
-move. A taker MUST NOT pay a quote it has not accepted, and a maker MAY
-refuse a payment against a quote that was never accepted.
 
 #### `abort`
 
@@ -620,7 +614,7 @@ in it. **They determine it**, by the final-CLTV they put in the counter
 invoice — and they have everything needed to choose it correctly at that
 moment:
 
-1. The destination invoice arrived in the `accept`.
+1. The destination invoice arrived in the `rfq`.
 2. So the maker can find their route to the destination and total its
    CLTV delta **before issuing anything**.
 3. The counter invoice's final CLTV is then set above that, plus Δ.
@@ -635,10 +629,10 @@ moved the failure to the worst possible moment: the taker has paid, the
 funds are held, and the only remaining option is to abandon a trade that
 was never going to complete.
 
-> **This is why `accept` carries the destination invoice rather than just
-> an amount.** The maker needs the route before they can price the
-> timelock, and the route needs the destination. An accept that named only
-> a sum would force the maker to guess.
+> **This is why the `rfq` carries the destination invoice rather than just
+> an amount.** The maker needs the route before they can price either the
+> trade or the timelock, and the route needs the destination. An `rfq`
+> naming only a sum would force the maker to guess at both.
 
 A maker MUST still abandon the trade if the rule is violated at payment
 time — a route may have changed — but that is a fallback, not the
@@ -654,8 +648,8 @@ same operator — needs only:
 2. The taker sends `rfq` with the destination invoice.
 3. The maker replies with `quote` — a hold invoice carrying the same
    payment hash.
-4. The taker `accept`s and pays it. The maker pays the destination. The
-   secret comes back and the maker settles.
+4. The taker pays it. The maker pays the destination. The secret comes
+   back and the maker settles.
 
 **The taker may simply pay what it is invoiced.** Checking the amount
 against the price is the taker's own protection, and a taker who trusts
@@ -714,7 +708,7 @@ that will execute unattended.
 
 ## Encryption
 
-`rfq`, `quote`, `accept` and `abort` MUST be encrypted with
+`rfq`, `quote` and `abort` MUST be encrypted with
 [NIP-44](44.md). NIP-04 MUST NOT be used.
 
 Offers are public and unencrypted. There is no encrypted offer form: an
@@ -746,10 +740,9 @@ counterparties.
       |  route it, price it  |                      |                      |
       |-- 23204 quote ------>|                      |                      |
       |   (hold invoice, same H, firm) ----------->|                      |
-      |                      |<-- 23204 accept -----|                      |
-      |<---------------------|   (e tag seals the quote)                   |
       |                      |                      |                      |
       |<=========== pays the quoted invoice — HELD =|                      |
+      |             paying is accepting             |                      |
       |                      |                      |                      |
       |============ pays destination invoice ============================>|
       |<---------------------- S revealed on settlement -------------------|
@@ -757,7 +750,7 @@ counterparties.
       |=== settles the quoted invoice with S ======>|                      |
 ```
 
-Nothing after `accept` passes over the relay.
+Nothing after `quote` passes over the relay.
 
 ## Open questions
 
