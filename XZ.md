@@ -46,8 +46,9 @@ for advantage, because neither trader holds the secret.
 
 ## Terms
 
-* **maker**: The party who publishes an offer and holds liquidity in both
-  assets. Bob, above.
+* **maker**: The party who publishes an offer. Bob, above. A maker needs
+  **outbound liquidity in the asset it sells** and **inbound capacity in
+  the asset it buys** — it need hold none of the latter. See below.
 * **taker**: The party who accepts a published offer. Alice.
 * **destination**: The party being paid, in the asset the taker does not
   hold. Clair. **The destination is not a participant in this protocol.**
@@ -265,6 +266,31 @@ The decrypted — here, merely parsed — content:
 * `volume` is what the maker can deliver **now**, bounded by their
   outbound liquidity in the sell asset. It **depletes as trades
   complete**.
+
+### What a maker actually has to hold
+
+**Only the asset it sells.**
+
+The maker pays the destination out of its own outbound liquidity, so it
+must hold that asset. But it is *paid* by the taker, and being paid
+requires **inbound capacity**, not a balance — and the taker's channel
+supplies exactly that. A taker who has funded a channel to the maker has
+put the whole of its balance on its own side, which is the maker's
+inbound.
+
+So a maker can begin with **no holding of the asset it buys at all**, and
+its capital requirement is one-sided.
+
+> **Which means `volume` is simply the maker's outbound liquidity in the
+> sell asset**, and nothing else bounds it. There is no second constraint
+> to reason about.
+
+**The position is one-directional and it depletes.** Every trade moves
+the sell asset out and accumulates the buy asset on the maker's side of
+the taker's channel. Eventually the maker has no sell-side liquidity left
+and a pile of an asset it did not set out to hold. Restoring the position
+is the maker's own problem — flow in the other direction, or a trade
+made elsewhere — and this protocol says nothing about it.
 
 ### The price is everything the taker pays
 
