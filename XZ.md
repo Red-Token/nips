@@ -539,10 +539,36 @@ expiry(counter invoice HTLC)  >  expiry(destination invoice HTLC)  +  Δ
 > paid. A maker who gets this wrong loses money; a taker who gets it
 > wrong loses nothing.
 
-A maker MUST verify this before paying the destination invoice, and MUST
-abandon the trade if it does not hold. The requirement is expressed in
-the counter invoice's own final-CLTV field, which is where a taker's node
-will read it, rather than restated in the message.
+### The maker sets this, rather than checking it
+
+The maker does not have to hope the taker's HTLC arrives with enough life
+in it. **They determine it**, by the final-CLTV they put in the counter
+invoice — and they have everything needed to choose it correctly at that
+moment:
+
+1. The destination invoice arrived in the `accept`.
+2. So the maker can find their route to the destination and total its
+   CLTV delta **before issuing anything**.
+3. The counter invoice's final CLTV is then set above that, plus Δ.
+
+Whatever route the taker takes only *adds* delta on top of that floor, so
+the maker's incoming HTLC cannot arrive with less life than they asked
+for.
+
+A maker MUST set the counter invoice's final CLTV to satisfy the rule
+above. A maker that instead issues an invoice and checks afterwards has
+moved the failure to the worst possible moment: the taker has paid, the
+funds are held, and the only remaining option is to abandon a trade that
+was never going to complete.
+
+> **This is why `accept` carries the destination invoice rather than just
+> an amount.** The maker needs the route before they can price the
+> timelock, and the route needs the destination. An accept that named only
+> a sum would force the maker to guess.
+
+A maker MUST still abandon the trade if the rule is violated at payment
+time — a route may have changed — but that is a fallback, not the
+mechanism.
 
 ## Failure modes
 
