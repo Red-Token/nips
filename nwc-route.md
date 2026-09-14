@@ -53,6 +53,27 @@ A wallet MUST NOT present this result as a guarantee, and a client MUST
 NOT treat it as one. It is the wallet's best current belief, which is the
 same basis on which the wallet would have attempted the payment anyway.
 
+### Why not NNC's `query_routes`
+
+NNC already has a route query: a destination and an amount, returning
+routes. It is not a substitute, for two reasons.
+
+**A wallet grant is not a node grant.** NNC and NWC are separate
+protocols with separate info events and separate access grants. A
+controller authorised to *spend* — `pay_invoice` and nothing else — has no
+NNC access at all, and cannot ask a node-management question. Requiring
+one would mean handing anybody who needs a fee estimate the ability to
+inspect the node's graph, list its peers, and read its channels.
+
+**An invoice is not a destination and an amount.** Route hints in a BOLT11
+are how a payee behind a private channel is reachable at all, and they
+exist only in the invoice. A query taking a pubkey would report no route
+to a destination that `pay_invoice` would reach without difficulty — and
+worse, would sometimes quote a route the real payment does not take.
+
+The two answer different questions. `query_routes` asks what the graph
+looks like; `quote_payment` asks what **this payment** would cost.
+
 ## Methods
 
 ### `quote_payment`
