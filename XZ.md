@@ -82,8 +82,7 @@ An asset reference is three values: what the coin is, which network, and
 which instance of that network.
 
 ```jsonc
-["sell", "btc", "signet", "0014868a826ddd4e7017b9a41ccb6f82ec08e5d511ee"]
-//        ^asset ^network  ^chain identifier
+{ "asset": "btc", "network": "signet", "chain": "0014868a826ddd4e7017b9a41ccb6f82ec08e5d511ee" }
 ```
 
 | Element | Answers | Authoritative |
@@ -191,21 +190,29 @@ a priced negotiation should wait on a confirmation.
 Public, and addressable so that a maker can revise or withdraw it by
 publishing again under the same `d`.
 
+**Tags are for filtering. The terms are JSON in the content.**
+
 ```jsonc
 {
   "kind": 30200,
   "pubkey": "<maker>",
   "tags": [
     ["d", "<offer id>"],
-    ["t", "btc-xbt"],                                  // coarse pair, filterable
-    ["t", "<sell chain>-<buy chain>"],                 // exact pair, filterable
-    ["sell", "btc", "signet", "<chain identifier>"],   // what the maker delivers
-    ["buy",  "xbt", "signet", "<chain identifier>"],   // what the maker is paid in
-    ["price", "2083333", "ppm"],      // buy-units per million sell-units
-    ["volume", "500000000"],          // msat of `sell`, available now
-    ["min", "1000"]                   // msat of `sell`, smallest trade
+    ["o", "btc:xbt"]          // the pair, directional and filterable
   ],
-  "content": ""
+  "content": "{ ... }"        // JSON, below
+}
+```
+
+The decrypted — here, merely parsed — content:
+
+```jsonc
+{
+  "sell":   { "asset": "btc", "network": "signet", "chain": "<chain identifier>" },
+  "buy":    { "asset": "xbt", "network": "signet", "chain": "<chain identifier>" },
+  "price":  2083333,          // buy-units per million sell-units
+  "volume": 500000000,        // msat of `sell`, available now
+  "min":    1000              // msat of `sell`, smallest trade
 }
 ```
 
@@ -213,83 +220,77 @@ publishing again under the same `d`.
   maker selling BTC for XBT is equally a maker buying XBT with BTC; which
   one is `sell` is a matter of direction, and a complete market is offers
   in **both directions**, not two kinds of order.
-* `price` is expressed in parts per million to avoid floating point. An
+* `price` is parts per million, to avoid floating point. An
   implementation MUST perform the conversion in integer arithmetic.
-* `volume` is what the maker can deliver **now**, and is bounded by their
+* `volume` is what the maker can deliver **now**, bounded by their
   outbound liquidity in the `sell` asset. It **depletes as trades
-  complete**, and a maker SHOULD republish as it does.
-* Both `sell` and `buy` MUST carry a chain identifier. An offer without
-  one is malformed and MUST be ignored.
+  complete**.
+* Both asset references MUST be complete. An offer missing either, or
+  missing any of their three elements, is malformed and MUST be ignored.
 
 ### Finding offers
 
-**Only single-letter tags are filterable.** `sell` and `buy` cannot be
-queried, so an offer MUST also carry `t` tags that can be:
-
-| Tag | Value | Use |
-|---|---|---|
-| `t` | `<sell asset>-<buy asset>` | coarse — every `btc-xbt` offer on any network |
-| `t` | `<sell chain>-<buy chain>` | exact — that pair of chains and no other |
-
-Both are **directional**: an offer selling BTC for XBT is `btc-xbt`, and
-the opposite offer is `xbt-btc`. A taker wants one direction and should
-not have to discard the other.
+**Only single-letter tags are filterable in Nostr**, which is why the
+terms being in the content costs nothing: they were never filterable
+wherever they sat. One tag carries what a relay can index.
 
 ```jsonc
-{ "kinds": [30200], "#t": ["btc-xbt"] }                        // browsing
-{ "kinds": [30200], "#t": ["0014868a...-0014eb5d..."] }        // exact
+["o", "btc:xbt"]
 ```
 
-The exact form is long — a chain identifier is forty hex characters for a
-single-key signet and rather more for a multisig one — and that is the
-price of a filter that cannot over-match. A client that knows which
-chains it trades SHOULD use it.
+`<sell asset>:<buy asset>`, and **directional** — an offer selling BTC for
+XBT is `btc:xbt`, and the opposite offer is `xbt:btc`. A taker wants one
+direction and should not fetch the other to discard it.
 
-> **Filter coarsely, verify precisely.** A `t` tag is a hint a relay can
-> index; it is not evidence. An implementation MUST verify the `sell` and
-> `buy` tags of every offer it receives, whichever filter fetched it, and
-> MUST NOT treat a matching `t` as confirmation that an offer is for the
-> chains it wanted. The tag is chosen by the maker and a relay does not
-> check it.
+```jsonc
+{ "kinds": [30200], "#o": ["btc:xbt"] }
+```
+
+The filter is **coarse by design**: it names assets, not chains, so it
+returns offers for every network. Selecting the chain you want happens
+after fetching, against the `sell` and `buy` references in the content.
+That is not a second job — an implementation must verify those anyway.
+
+> **Filter coarsely, verify precisely.** An `o` tag is a hint a relay can
+> index; it is not evidence. The maker chooses it, the relay does not
+> check it, and it need not agree with the content. An implementation
+> MUST verify `sell` and `buy` on every offer it receives and MUST NOT
+> treat a matching `o` as confirmation of anything.
+
+### Withdrawal and revision
+
+An offer has no expiry and does not lapse. A maker manages its life by
+republishing under the same `d`:
+
+| To | Do |
+|---|---|
+| change the price | republish with the new price |
+| reflect a completed trade | **republish with the remaining volume** |
+| stop trading | republish with **empty content** |
+
+**An offer whose content is empty is withdrawn.** A taker MUST treat it
+as absent.
+
+A maker SHOULD republish after each trade, since `volume` already
+consumed is no longer deliverable and an offer advertising it will draw
+accepts the maker must abort.
+
+> **Why withdrawal is an empty event rather than a deletion request.**
+> Deletion is advisory and relays honour it unevenly. A replaceable event
+> with nothing in it is unambiguous, and it arrives by the same path the
+> offer did.
+
+> **Why no expiry.** An expiry is a promise about a future the maker
+> cannot bind — they may withdraw before it, and nothing compels them to
+> honour the offer until it. A taker judges freshness from `created_at`
+> and from whether the maker answers; a stale offer costs a round trip,
+> the same as any other abort.
 
 **The offer names no node.** The counter invoice does — a BOLT11 invoice
 carries its destination — and that is the binding statement. A node
 advertised in an offer would be an unverified hint that a taker might
 treat as authoritative, and the taker either already has a channel to the
 maker or does not; naming it changes neither.
-
-### An offer has no expiry
-
-There is no expiry field, and offers do not lapse. A maker manages the
-offer's life by republishing it:
-
-| To | Do |
-|---|---|
-| change the price | republish with the new price |
-| reflect a completed trade | **republish with the remaining volume** |
-| stop trading | republish with no tags and empty content |
-
-A maker SHOULD republish after each trade, since `volume` that has been
-consumed is no longer deliverable and an offer advertising it will draw
-accepts the maker must abort.
-
-> **Why no expiry.** An expiry is a promise about a future the maker
-> cannot bind — they may withdraw before it, and nothing compels them to
-> honour the offer until it. It would add a field that means less than it
-> appears to. Withdrawal is unambiguous and immediate, and a maker who
-> wants out uses it.
-
-A taker judges freshness from the event's `created_at` and from whether
-the maker answers. A stale offer costs a round trip, which is the same
-cost as any other abort.
-
-**An offer with no tags and empty content is withdrawn**, as NIP-XX
-revokes a grant. A taker MUST treat a withdrawn offer as absent.
-
-> **Why withdrawal is an empty event rather than a deletion request.**
-> Deletion is advisory and relays honour it unevenly. A replaceable event
-> with nothing in it is unambiguous, and it arrives by the same path the
-> offer did.
 
 An offer is an **invitation, not a commitment**. The maker is bound by
 nothing until they issue a counter invoice.
