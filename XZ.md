@@ -160,30 +160,48 @@ The chain identifier is:
 
 ## Theory of Operation
 
-Three messages, then two payments.
+Four messages, then two payments.
 
-1. The **maker** publishes an **offer** (kind `30200`): the pair, the
-   price, the available volume, and where to reach them. Public and
-   standing.
+1. The **maker** publishes an **offer** (kind `30200`): the pair, an
+   indicative price, and the volume available. Public and standing. It is
+   an advertisement — a price to compare, not a price to trade at.
 
 2. The **destination** issues an ordinary invoice to the **taker**, by
    whatever means they already use. This is outside the protocol.
 
-3. The **taker** sends an **accept** (kind `23204`): the destination
-   invoice, and the amount they expect to pay at the offered price.
+3. The **taker** sends a **request for quotation** (kind `23204`) naming
+   the trade it actually wants: the destination invoice.
 
-4. The **maker** replies with a **confirm** (kind `23204`) carrying a
-   **counter invoice** — a hold invoice, for the taker's asset, at the
-   agreed amount, locked to **the same `H` as the destination invoice**.
+4. The **maker** replies with a **quotation** — a firm price for *that*
+   trade, expressed as a hold invoice for the amount it will accept,
+   carrying **the same payment hash as the destination invoice**.
 
-5. The **taker** pays the counter invoice. It holds: the maker cannot
+5. The **taker** **accepts**. The trade is agreed.
+
+6. The **taker** pays the quoted invoice. It holds: the maker cannot
    settle it without `S`.
 
-6. The **maker** pays the destination invoice. The destination settles
+7. The **maker** pays the destination invoice. The destination settles
    it, because that is how she gets paid, and `S` is revealed to the
    maker as the payment completes.
 
-7. The **maker** settles the counter invoice with `S`.
+8. The **maker** settles the quoted invoice with `S`.
+
+### Why a quotation and not just an offer
+
+An offer is published before the maker knows who will take it or where
+the money is going. It cannot price the trade, because the cost of
+reaching a destination is not known until the destination is.
+
+The quotation is where that cost lands. The maker has the destination
+invoice, can find the route, and quotes a price that reflects it. **An
+offer is indicative; a quotation is firm.** Without the split, a maker
+would have to advertise an average and absorb every trade that was worse
+than average — which is a tax on takers who are cheap to reach, paid to
+subsidise ones who are not.
+
+Accepting seals it. The trade is agreed at that point, and paying is
+settlement rather than agreement.
 
 The taker's funds can only move if the maker holds `S`, and `S` only
 exists in the open once the destination has been paid. **The taker
@@ -249,7 +267,7 @@ buy_msat = ceil( sell_msat × price / 1_000_000 )
 ```
 
 **A maker MUST NOT charge anything beyond this.** There is no fee field,
-no spread stated separately, and nothing added at confirm time. Whatever
+no spread stated separately, and nothing added after the quote. Whatever
 the maker's costs are — routing to the destination, the capital tied up,
 the risk carried — they are priced into `price` before the offer is
 published.
@@ -274,21 +292,21 @@ number.
 **The maker bears routing cost, and cannot know it in advance.** When the
 offer is published the destination is unknown; the maker is pricing an
 average. If a particular destination turns out to be expensive to reach,
-the maker absorbs it — or aborts at `accept`, having seen the invoice.
-Aborting for that reason is legitimate, and it is why an offer is an
-invitation rather than a commitment.
+the maker prices it into the quotation, having seen the invoice. That is
+what the quotation is for, and it is why an offer is an invitation rather
+than a commitment.
 
 **The offer does not name chains.** It advertises a pair and a price;
 which chains are meant is settled in the negotiation, where it binds. The
-taker states the two chains in `accept`, the maker confirms or aborts,
-and the taker verifies the counter invoice against what was confirmed.
+taker names the trade in its `rfq`, the maker quotes or aborts, and the
+taker pays or does not.
 
 > **Why chains belong in the negotiation and not the advertisement.** A
 > node exists on exactly one network, so a maker's chains are a property
 > of the maker rather than of any one offer — repeating them in every
 > offer states the same fact many times and gives it more authority than
 > an advertisement deserves. What protects the taker is checking the
-> counter invoice, and that check happens against `confirm`, not against
+> counter invoice, and that check happens against the quote, not against
 > something read earlier.
 >
 > The cost is a taker who accepts an offer from a maker trading a
@@ -386,54 +404,69 @@ The decrypted content is a JSON object with a `type`:
 
 | `type` | Sent by | Carries |
 |--------|---------|---------|
-| `accept` | taker | the destination invoice and the expected amount |
-| `confirm` | maker | the counter invoice |
+| `rfq` | taker | the destination invoice |
+| `quote` | maker | a hold invoice at a firm price |
+| `accept` | taker | nothing; the `e` tag seals which quote |
 | `abort` | either | a reason |
 
-#### `accept`
+#### `rfq`
 
 ```jsonc
 {
-  "type": "accept",
+  "type": "rfq",
   "destination_invoice": "lnbc..."
 }
 ```
 
 One field. The offer and its exact version are in the tags; the amount
-and the payment hash are in the invoice; and **the chains need not be
-stated at all** — see below.
+and the payment hash are in the invoice.
 
 **The destination invoice MUST specify an amount.** An amountless BOLT11
-invoice would leave the maker free to pay anything, and there would be
-nothing to price the trade against. A maker MUST reject an accept whose
-destination invoice carries no amount.
+would leave the maker free to pay anything, and there would be nothing to
+price the trade against. A maker MUST reject an `rfq` whose destination
+invoice carries no amount.
 
-That amount is not restated here — it is in the invoice, and the invoice
-is what the maker will pay.
+The chains are not stated. The maker either has a node on the destination
+invoice's chain or does not, and if not the payment cannot be made at all
+— a claim in the message would not change that.
 
-The chains are not stated. The maker either has a node on the
-destination invoice's chain or does not, and if not the payment cannot be
-made at all — a claim in the message would not change that.
-
-#### `confirm`
+#### `quote`
 
 ```jsonc
 {
-  "type": "confirm",
-  "counter_invoice": "lnsb..."
+  "type": "quote",
+  "counter_invoice": "lnsb...",
+  "expiry": 1789050600
 }
 ```
 
-Also one field. The amount, the payment hash and the final CLTV are in
-the counter invoice, and the invoice is what the taker pays; restating
-them would create fields that can disagree with it, and a rule about
-which wins.
+The hold invoice **is** the quotation: its amount is the firm price, its
+payment hash is the destination's, and its final CLTV is the maker's
+timelock requirement. Nothing else needs stating, and restating any of it
+would create a field that can disagree with the invoice.
 
+`expiry` is how long the maker will honour the quote. It is the maker's
+own price risk, and SHOULD be short — seconds rather than minutes. A
+quote that has expired is a quote the maker MAY refuse to settle against,
+and a taker MUST NOT pay one.
 
+> **The maker is bound by this and by nothing before it.** An offer
+> commits nobody. A quotation is a price the maker will trade at, for as
+> long as it says, for the specific trade it was asked about.
 
-The counter invoice MUST be a **hold invoice**. A maker who issues an
-ordinary invoice will have it settled on receipt, before they hold `S`,
-and will have been paid for a delivery they have not made.
+#### `accept`
+
+```jsonc
+{ "type": "accept" }
+```
+
+Nothing but the type. **The `e` tag is the message** — it names the quote
+being sealed, and no other quote can be meant.
+
+The trade is agreed here. Paying is settlement, not agreement, and the
+separation is why a maker knows a quotation was taken before any funds
+move. A taker MUST NOT pay a quote it has not accepted, and a maker MAY
+refuse a payment against a quote that was never accepted.
 
 #### `abort`
 
@@ -470,7 +503,7 @@ messages — and a party that has paid MUST NOT rely on one being honoured.
    taker read it.
 
 4. **The maker can actually pay the destination invoice.** A maker SHOULD
-   establish this before confirming rather than after being paid —
+   establish this before quoting rather than after being paid —
    discovering it afterwards leaves the taker's funds held until timeout
    for a trade that was never going to complete.
 
@@ -478,8 +511,8 @@ messages — and a party that has paid MUST NOT rely on one being honoured.
 
 `volume` in an offer states what the maker could deliver when they
 published. It is **not a reservation**, and accepting an offer claims
-nothing. Two takers may accept the same volume simultaneously; the maker
-confirms whichever it can serve and aborts the other.
+nothing. Two takers may request the same volume simultaneously; the maker
+quotes whichever it can serve and aborts the other.
 
 That is wasteful — the loser has done work for nothing — and it is still
 correct, because the alternative is worse:
@@ -493,7 +526,7 @@ correct, because the alternative is worse:
 
 Aborting a taker costs them a round trip. Reserving for them costs the
 maker real capacity. The asymmetry is deliberate, and it is why a maker
-commits at `confirm` and not before.
+commits at `quote` and not before.
 
 ## What the taker MUST verify before paying
 
@@ -577,11 +610,11 @@ first implementation — a demo, or a deployment where both sides are the
 same operator — needs only:
 
 1. The maker publishes an offer.
-2. The taker sends `accept` with the destination invoice.
-3. The maker replies with `confirm` and a hold invoice carrying the same
+2. The taker sends `rfq` with the destination invoice.
+3. The maker replies with `quote` — a hold invoice carrying the same
    payment hash.
-4. The taker pays it. The maker pays the destination. The secret comes
-   back and the maker settles.
+4. The taker `accept`s and pays it. The maker pays the destination. The
+   secret comes back and the maker settles.
 
 **The taker may simply pay what it is invoiced.** Checking the amount
 against the price is the taker's own protection, and a taker who trusts
@@ -640,7 +673,7 @@ that will execute unattended.
 
 ## Encryption
 
-`accept`, `confirm` and `abort` MUST be encrypted with
+`rfq`, `quote`, `accept` and `abort` MUST be encrypted with
 [NIP-44](44.md). NIP-04 MUST NOT be used.
 
 Offers are public and unencrypted. There is no encrypted offer form: an
@@ -667,22 +700,23 @@ counterparties.
       |-- 30200 offer ------>|                      |                      |
       |                      |<-- reads offer ------|                      |
       |                      |                      |<-- invoice(H) -------|
+      |                      |<-- 23204 rfq --------|                      |
+      |<---------------------|   (destination invoice)                     |
+      |  route it, price it  |                      |                      |
+      |-- 23204 quote ------>|                      |                      |
+      |   (hold invoice, same H, firm) ----------->|                      |
       |                      |<-- 23204 accept -----|                      |
-      |<---------------------|   (destination invoice, both amounts)       |
-      |  verify price, volume|                      |                      |
-      |-- 23204 confirm ---->|                      |                      |
-      |   (hold invoice, same H)  ---------------->|                      |
-      |                      |   verify H matches, amount, hold, timelock  |
+      |<---------------------|   (e tag seals the quote)                   |
       |                      |                      |                      |
-      |<=========== pays counter invoice — HELD ====|                      |
+      |<=========== pays the quoted invoice — HELD =|                      |
       |                      |                      |                      |
       |============ pays destination invoice ============================>|
       |<---------------------- S revealed on settlement -------------------|
       |                      |                      |                      |
-      |=== settles counter invoice with S =========>|                      |
+      |=== settles the quoted invoice with S ======>|                      |
 ```
 
-Nothing after `confirm` passes over the relay.
+Nothing after `accept` passes over the relay.
 
 ## Open questions
 
