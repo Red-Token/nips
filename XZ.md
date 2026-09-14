@@ -549,6 +549,47 @@ these are the rules that make moving it safe.
 
 4. **The timelock rule below holds.**
 
+## The order of payment
+
+**The maker MUST NOT pay the destination until the taker's payment is
+held at the maker's node.**
+
+This is the rule the whole construction rests on, and it is not symmetric.
+The two invoices are different in kind:
+
+| Leg | Invoice | Behaviour |
+|---|---|---|
+| taker → maker | **hold** | stays pending; the maker cannot settle it without `S` |
+| maker → destination | **ordinary** | the destination settles on receipt, which is what publishes `S` |
+
+So the sequence is forced:
+
+1. The taker pays. The funds are **held** — committed but unclaimable.
+2. The maker pays the destination. She settles, and `S` reaches the maker.
+3. The maker settles the held payment with `S`.
+
+**Reversing the first two ruins the maker.** The destination settles on
+receipt, so a maker who pays first has handed over the money and learned
+`S` while the taker is committed to nothing. There is no step that
+compels the taker to pay afterwards, and `S` is worth nothing to a maker
+with no held HTLC to claim.
+
+> **Why each party is safe in this order.**
+>
+> The **taker** is safe because their funds are held against a hash whose
+> preimage does not exist in the open. The maker can only claim by
+> producing `S`, and `S` only leaves the destination when she is paid. So
+> the taker's money moves if and only if the destination was paid —
+> whatever the amounts were, whoever the maker is.
+>
+> The **maker** is safe because they pay out only after being paid in,
+> and the timelock below guarantees their claim outlives their payment.
+> Their exposure is the window between paying the destination and
+> settling, and that window is theirs to size.
+
+A taker MUST NOT be asked to pay after the destination has been paid, and
+an implementation that offers to do so is not implementing this protocol.
+
 ## The timelock rule
 
 **The taker's outgoing HTLC MUST outlive the maker's payment to the
