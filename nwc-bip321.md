@@ -16,6 +16,8 @@ This specification extends NWC-321's two methods:
 
 - `receive` gains **instruction selection**: which instruction types to
   include, in what order, with per-instruction options.
+- `receive` gains **`label`**, the one BIP-321 URI parameter NWC-321
+  cannot set.
 - `pay` gains **on-chain instruction types**, so paying a `bitcoin:`
   address from a URI can be reported.
 
@@ -149,6 +151,32 @@ Errors:
 - `BAD_REQUEST`: `methods` is empty, names an unknown type, names only
   instruction types NWC-321 does not permit alone, or carries a
   per-instruction option this wallet cannot honour.
+
+### `label`
+
+BIP-321 URIs carry `label` and `message` as **separate** parameters:
+`label` names the payee, `message` says what the payment is for.
+
+NWC-321's `receive` takes `description` and puts it *"in each selected
+instruction that supports descriptions"* — which is `message`'s job. There
+is no way to set `label`, so a payee cannot put its own name in the URI it
+hands out.
+
+```yaml
+{
+    "method": "receive",
+    "params": {
+        "description": "Order #123",   // NWC-321: the instruction descriptions
+        "label": "Alice's Shop"        // this specification: the URI's label=
+    }
+}
+```
+
+`label` MUST appear **only** in the URI's `label=` parameter and MUST NOT
+be used as an instruction description. The two are different claims —
+putting the payee's name where the payment's purpose belongs tells the
+payer their own money's destination twice and makes the instructions
+disagree with the URI.
 
 ## Extending `pay`
 

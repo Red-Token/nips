@@ -67,3 +67,24 @@ under a different method name, in `dln-node` (Rust, LDK) and
 `[bolt11, bolt12, onchain]` in one URI. We are adopting NWC-321's names
 now and would rather this lived upstream than in a local extension. Happy
 to open a PR if the shape looks reasonable.
+
+---
+
+## Addendum: `label`
+
+Found after the above was drafted, while renaming an implementation onto
+NWC-321's names.
+
+BIP-321 carries `label` and `message` as separate parameters — `label`
+names the payee, `message` says what the payment is for. `receive`'s
+`description` is `message`'s job: the spec says to put it *"in each
+selected instruction that supports descriptions"*. Nothing sets `label`,
+so a payee cannot put its own name in the URI it hands out.
+
+Suggested: an optional `label` on `receive`, appearing **only** in the
+URI's `label=` and never as an instruction description. The two are
+different claims, and conflating them tells the payer their own money's
+destination twice while making the instructions disagree with the URI.
+
+Small enough to fold into the `methods` proposal above or to take
+separately.
