@@ -53,6 +53,24 @@ A wallet MUST NOT present this result as a guarantee, and a client MUST
 NOT treat it as one. It is the wallet's best current belief, which is the
 same basis on which the wallet would have attempted the payment anyway.
 
+### This replaces a method we already had
+
+`estimate_routing_fees` has been in our forked `47.md` since before this
+draft, and `dln-node` implements it. It takes a **destination pubkey and
+an amount** and returns a fee and a timelock, which is the same question
+asked in the shape this draft argues against two sections below: a pubkey
+cannot carry route hints, so it cannot reach a payee behind a private
+channel and may quote a route the real payment does not take.
+
+So this is not a new capability. It is the same one, taking the invoice
+instead — and a consumer that implements it should **retire
+`estimate_routing_fees` rather than serve both**, since two methods
+answering one question differently is how implementations drift.
+
+Recorded because an earlier version of this draft said nothing in NWC
+answered the question. True of published NWC, which is what the survey of
+2026-09-06 found; not true of the fork we were running.
+
 ### Why not NNC's `query_routes`
 
 NNC already has a route query: a destination and an amount, returning
