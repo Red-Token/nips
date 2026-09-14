@@ -1,95 +1,76 @@
 NWC-XX
 ======
 
-BOLT-12 Offers
---------------
+BOLT12 Offer Management
+-----------------------
 
 `draft` `optional`
 
+> **Extends [NWC-12](https://github.com/nostr-wallet-connect/nwc), it does
+> not replace it.** NWC-12 defines `make_offer` and the `bolt12` payment
+> type. This adds the three things it does not cover.
+
 ## Summary
 
-This specification defines five optional Nostr Wallet Connect methods:
+This specification defines three optional Nostr Wallet Connect methods:
 
-- `pay_offer` pays a BOLT-12 offer.
-- `make_offer` creates one.
-- `lookup_offer` reports what an offer has received.
+- `pay_offer` pays a BOLT12 offer.
 - `list_offers` lists the offers this wallet created.
 - `disable_offer` stops one accepting payments.
 
 ## Motivation
 
-NWC core is BOLT-11: `make_invoice` produces an invoice for one payment of
-one amount, and `lookup_invoice` reports whether that payment arrived. A
-client that wants a **reusable** way to be paid has nothing to ask for.
+NWC-12 is **receive-side**. It creates offers, keeps them payable, and
+defines how a payment made through one is looked up. It says nothing about
+paying somebody else's offer, and nothing about the offers a wallet has
+already created.
 
-BOLT-12 offers are that. An offer is a long-lived instruction to pay,
-which any number of payers can fetch an invoice against, and the payee
-does not have to be online when a payer decides to use it. That is a
-different object from an invoice, with a different lifecycle, and it needs
-its own methods rather than a flag on the invoice ones.
+Those are the operator's questions rather than the payer's, and they do
+not fit inside `make_offer`:
 
-### Why not extend `make_invoice`
+- **Paying.** NWC-321's `pay` can carry an `lno` instruction, but only
+  inside a BIP-321 URI, and a client holding a bare `lno1...` string has
+  nothing to call. Wrapping it in a URI to pay it is a workaround, not an
+  interface.
+- **Listing.** An offer is reusable, so "which of my offers are live and
+  what have they taken" has no answer in a payment-lookup method. NWC-12
+  says it plainly: *an offer is a receive target, not a payment record.*
+- **Retiring.** An offer that should stop working needs the wallet to stop
+  issuing invoices against it. Nothing else can do it — the string is
+  already published.
 
-Because the two differ in what they promise. An invoice names one payment
-and expires; an offer names a willingness to be paid and is retired. The
-words that make sense for one are wrong for the other — an offer has no
-`settled_at`, and asking whether an offer is "paid" is a category error
-when the answer is "five times, so far".
+### What was here before
 
-Overloading `make_invoice` with a mode flag would mean a response whose
-fields are conditionally meaningless, and a client discovering which
-by reading the flag it sent.
+An earlier draft of this document defined `make_offer` and `lookup_offer`
+as well. Both are withdrawn.
 
-### An offer is not a secret
+`make_offer` duplicated NWC-12's, which had been published in the interval
+between our survey and our draft, and NWC-12's is the better definition —
+it carries `offer_id`, `issuer`, `single_use` and an absolute expiry, and
+it requires the wallet to keep every unexpired offer payable while the
+user-facing wallet is offline.
 
-Anything a payer can fetch an invoice against is public by intent. So
-`list_offers` and `lookup_offer` report **usage** — how many payments, how
-much received — because that is the part the wallet's owner cannot see by
-looking at the offer itself, and the part no payer can see at all.
+`lookup_offer` is withdrawn because `list_offers` below returns the same
+per-offer statistics, and a payment is looked up with NWC-09's
+`lookup_payment`. Two methods for one question is how implementations
+drift.
+
+## Dependencies
+
+- [NWC-12](https://github.com/nostr-wallet-connect/nwc) for `make_offer`,
+  `offer_id`, and the `bolt12` payment type.
+- [NWC-09](https://github.com/nostr-wallet-connect/nwc) for
+  `lookup_payment`, which NWC-12 requires.
+
+**Offers are identified by NWC-12's `offer_id`** — the 32-byte BOLT12
+offer ID as lowercase hex — and not by the encoded offer string. A wallet
+implementing this specification MUST implement NWC-12.
 
 ## Methods
 
-### `make_offer`
-
-Creates a BOLT-12 offer.
-
-Request:
-
-```yaml
-{
-    "method": "make_offer",
-    "params": {
-        "amount": 123,             // msats; omit for an any-amount offer
-        "description": "string"    // required
-    }
-}
-```
-
-Response:
-
-```yaml
-{
-    "result_type": "make_offer",
-    "result": {
-        "offer": "lno1...",        // the encoded offer
-        "description": "string",
-        "amount": 123              // msats, present only if fixed
-    }
-}
-```
-
-**Omitting `amount` is meaningful, not a default.** An any-amount offer
-lets the payer choose, which is what a donation address or a tip jar is.
-A wallet that cannot issue one MUST return `BAD_REQUEST` rather than
-substituting an amount of its own.
-
-`description` is required because it is what the payer sees before paying
-and the only thing distinguishing two otherwise identical offers in
-`list_offers`.
-
 ### `pay_offer`
 
-Pays a BOLT-12 offer.
+Pays a BOLT12 offer.
 
 Request:
 
@@ -97,8 +78,8 @@ Request:
 {
     "method": "pay_offer",
     "params": {
-        "offer": "lno1...",        // required
-        "amount": 123,             // msats, required if the offer has no fixed amount
+        "offer": "lno1...",        // required, the encoded offer
+        "amount": 123000,          // msats, required if the offer has no fixed amount
         "payer_note": "string"     // optional, shown to the payee
     }
 }
@@ -110,72 +91,39 @@ Response:
 {
     "result_type": "pay_offer",
     "result": {
+        "transaction_id": "wallet-scoped-id",
         "preimage": "0123456789abcdef...",
-        "fees_paid": 123           // msats, optional
+        "fees_paid": 1000            // msats, optional
     }
 }
 ```
 
-Paying an offer involves a round trip the client does not see: the wallet
-fetches an invoice from the payee and pays that. So this method can fail
-in a way `pay_invoice` cannot — the payee may be unreachable, or may
-decline to issue an invoice at all — and a wallet SHOULD distinguish that
-from a routing failure, because the remedies differ. A payer can retry a
-route; nobody can retry a refusal.
+**The offer, not an `offer_id`.** Paying is the one operation where the
+wallet did not create the object: a payer holds a string somebody else
+published, and has no `offer_id` for it until it has parsed it.
+
+`transaction_id` is NWC-09's, so the payer can reconcile the payment with
+`lookup_payment` afterwards. Returning it here is what makes this method
+composable with the rest of NWC-12's world rather than a dead end.
+
+Paying an offer involves a round trip the client does not see — the wallet
+fetches an invoice from the payee and pays that — so this can fail in a way
+`pay_invoice` cannot: the payee may be unreachable or may decline to issue
+an invoice at all. A wallet SHOULD distinguish that from a routing
+failure, because the remedies differ. A payer can retry a route; nobody
+can retry a refusal.
 
 Errors:
 
-- `PAYMENT_FAILED`: The payment failed — timeout, no route, insufficient
-  capacity, or the payee did not issue an invoice.
+- `PAYMENT_FAILED`: The payment failed, including the payee declining or
+  failing to issue an invoice.
 - `INSUFFICIENT_BALANCE`: The wallet does not have enough funds.
 - `BAD_REQUEST`: The offer is malformed, or an amount is required and
   absent.
 
-### `lookup_offer`
-
-Reports an offer's status and what it has received.
-
-Request:
-
-```yaml
-{
-    "method": "lookup_offer",
-    "params": {
-        "offer": "lno1..."         // required
-    }
-}
-```
-
-Response:
-
-```yaml
-{
-    "result_type": "lookup_offer",
-    "result": {
-        "offer": "lno1...",
-        "description": "string",
-        "amount": 123,                  // msats, present only if fixed
-        "active": true,
-        "num_payments_received": 5,
-        "total_received": 615           // msats
-    }
-}
-```
-
-`active` is `false` for an offer this wallet has disabled or that has
-expired. **It is not a statement about the network**: a disabled offer is
-still a valid string a payer may hold, and what makes it stop working is
-this wallet declining to issue invoices against it.
-
-Errors:
-
-- `NOT_FOUND`: This wallet did not create the offer. A wallet MUST NOT
-  report on an offer it does not own, since it has no way to know what
-  that offer received.
-
 ### `list_offers`
 
-Lists offers created by this wallet.
+Lists offers this wallet created.
 
 Request:
 
@@ -198,24 +146,40 @@ Response:
     "result": {
         "offers": [
             {
+                "offer_id": "0123456789abcdef...",
                 "offer": "lno1...",
-                "description": "string",
-                "amount": 123,                  // msats, present only if fixed
+                "description": "string",        // optional
+                "issuer": "example.com",        // optional
+                "amount": 123000,               // msats, null for variable-amount
                 "active": true,
                 "single_use": false,
                 "num_payments_received": 5,
-                "total_received": 615,          // msats
-                "created_at": 1703225000
+                "total_received": 615000,       // msats
+                "created_at": 1703225000,
+                "expires_at": 1703311400        // optional
             }
         ]
     }
 }
 ```
 
-`active_only` defaults to **false** so that the unfiltered call is the
-complete one. A disabled offer that has received payments is exactly what
-an operator reconciling accounts needs to see, and a default that hid it
-would make the honest question the harder one to ask.
+The per-offer fields follow NWC-12's `make_offer` response, plus three
+this specification adds: `active`, `num_payments_received` and
+`total_received`.
+
+`active` is `false` for an offer this wallet has disabled or whose expiry
+has passed. **It is not a statement about the network**: a disabled offer
+is still a valid string a payer may hold, and what stops it working is
+this wallet declining to issue invoices against it.
+
+`active_only` defaults to **false** so the unfiltered call is the complete
+one. A disabled offer that received payments is exactly what an operator
+reconciling accounts needs to see, and a default that hid it would make
+the honest question the harder one to ask.
+
+`num_payments_received` and `total_received` count **settled** payments.
+An offer with an accepted-but-unsettled payment against it has not
+received it yet.
 
 ### `disable_offer`
 
@@ -227,7 +191,7 @@ Request:
 {
     "method": "disable_offer",
     "params": {
-        "offer": "lno1..."         // required
+        "offer_id": "0123456789abcdef..."   // required
     }
 }
 ```
@@ -241,24 +205,32 @@ Response:
 }
 ```
 
-**This is not revocation and cannot be.** The offer string is already out
-in the world, and payers holding it will keep trying. What this does is
-make the wallet stop issuing invoices against it, so those attempts fail.
-A client presenting this to a user should say so — "stop accepting", not
+**This is not revocation and cannot be.** The offer string is already
+published and payers holding it will keep trying. What this does is make
+the wallet stop issuing invoices against it, so those attempts fail. A
+client presenting this to a user should say so — "stop accepting", not
 "delete" — because a user who believes an offer is gone may reuse the
 context it was published in.
+
+A wallet MUST NOT settle a new payment against a disabled offer. It MAY
+settle one whose invoice was issued before the offer was disabled, since
+the payer committed funds against a promise the wallet had already made.
 
 Disabling is idempotent: disabling a disabled offer succeeds.
 
 Errors:
 
-- `NOT_FOUND`: This wallet did not create the offer.
+- `NOT_FOUND`: This wallet did not create the offer, or it is not visible
+  to this connection.
 
 ## Relationship to other specs
 
+- [NWC-12](https://github.com/nostr-wallet-connect/nwc) defines
+  `make_offer`, `offer_id` and the `bolt12` payment type. Required.
+- [NWC-09](https://github.com/nostr-wallet-connect/nwc) defines
+  `lookup_payment`, which is how a payment made through an offer is
+  reconciled — including one made by `pay_offer`.
+- [NWC-321](https://github.com/nostr-wallet-connect/nwc) can pay an `lno`
+  instruction inside a BIP-321 URI. `pay_offer` takes the offer itself.
 - NWC core defines the request and response envelope, the error codes, and
   method discovery through the info event.
-- NWC core's `make_invoice` and `lookup_invoice` are the BOLT-11
-  equivalents. A wallet MAY implement either set, both, or neither.
-- BOLT-12 defines the offer format itself. This specification defines how
-  a client asks a wallet to use one, and adds nothing to BOLT-12.
