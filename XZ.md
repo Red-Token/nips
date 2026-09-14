@@ -70,10 +70,12 @@ and no shared identity. Nothing in this protocol lets one node stand for
 both, and an implementation MUST NOT assume the maker's two nodes are
 related except by the maker saying so.
 
-That is why an offer names exactly one node: the maker's node on the
-**`buy`** side, where the taker needs a channel and from which the
-counter invoice will be issued. The maker's node on the `sell` side is
-never named, because the taker never contacts it.
+The taker deals with exactly one of them: the maker's node on the
+**`buy`** side, which issues the counter invoice and which the taker's
+channel terminates at. The `sell`-side node is the maker's own business —
+the taker never contacts it and has no way to verify it exists. What the
+taker verifies is the counter invoice; what the maker promises is
+delivery.
 
 ### Naming an asset
 
@@ -167,9 +169,7 @@ publishing again under the same `d`.
     ["buy",  "xbt", "0014eb5dbbf606bccfb5333530ead2e47af83ce3a668"],
     ["price", "2083333", "ppm"],      // buy-units per million sell-units
     ["volume", "500000000"],          // msat of `sell`, available now
-    ["min", "1000"],                  // msat of `sell`, smallest trade
-    ["node", "03abc...@1.2.3.4:9735"],
-    ["expiry", "1789050000"]
+    ["min", "1000"]                   // msat of `sell`, smallest trade
   ],
   "content": ""
 }
@@ -184,13 +184,39 @@ publishing again under the same `d`.
 * `volume` is what the maker can deliver **now**, and is bounded by their
   outbound liquidity in the `sell` asset. It **depletes as trades
   complete**, and a maker SHOULD republish as it does.
-* `node` is the maker's node **on the `buy` network** — where the taker's
-  channel must terminate and which will issue the counter invoice. A
-  maker MUST NOT advertise a node that is not on the `buy` network, and a
-  taker MUST NOT assume the maker has any node on the `sell` network
-  beyond the maker's assertion that it can deliver.
 * Both `sell` and `buy` MUST carry a chain identifier. An offer without
   one is malformed and MUST be ignored.
+
+**The offer names no node.** The counter invoice does — a BOLT11 invoice
+carries its destination — and that is the binding statement. A node
+advertised in an offer would be an unverified hint that a taker might
+treat as authoritative, and the taker either already has a channel to the
+maker or does not; naming it changes neither.
+
+### An offer has no expiry
+
+There is no expiry field, and offers do not lapse. A maker manages the
+offer's life by republishing it:
+
+| To | Do |
+|---|---|
+| change the price | republish with the new price |
+| reflect a completed trade | **republish with the remaining volume** |
+| stop trading | republish with no tags and empty content |
+
+A maker SHOULD republish after each trade, since `volume` that has been
+consumed is no longer deliverable and an offer advertising it will draw
+accepts the maker must abort.
+
+> **Why no expiry.** An expiry is a promise about a future the maker
+> cannot bind — they may withdraw before it, and nothing compels them to
+> honour the offer until it. It would add a field that means less than it
+> appears to. Withdrawal is unambiguous and immediate, and a maker who
+> wants out uses it.
+
+A taker judges freshness from the event's `created_at` and from whether
+the maker answers. A stale offer costs a round trip, which is the same
+cost as any other abort.
 
 **An offer with no tags and empty content is withdrawn**, as NIP-XX
 revokes a grant. A taker MUST treat a withdrawn offer as absent.
@@ -315,8 +341,8 @@ messages — and a party that has paid MUST NOT rely on one being honoured.
    yields for it. A maker MUST abort on any mismatch and MUST NOT issue a
    counter invoice for an amount the taker did not state.
 
-3. **The offer is still live** — not expired, not withdrawn, and not
-   revised since the taker read it.
+3. **The offer is still live** — not withdrawn, and not revised since the
+   taker read it.
 
 4. **The chain identifiers match the offer**, and the destination invoice
    is on the `sell` network. A maker MUST NOT pay an invoice whose
