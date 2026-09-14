@@ -95,11 +95,27 @@ The first two are for a human reading a raw event, and for an
 implementation deciding whether a message is worth examining at all. The
 third is what an implementation compares before acting.
 
-**Only the chain identifier decides anything.** An implementation MUST
-compare it, MUST reject a message whose identifier it does not recognise,
-and MUST NOT accept one on the grounds that the asset and network beside
-it look right. Where the identifier and the first two elements disagree,
-the message is malformed and MUST be rejected rather than reconciled.
+**Chains are not carried in the trade messages, because they cannot be
+lied about usefully.** A node exists on exactly one network, so:
+
+* The maker either has a node on the destination invoice's chain or does
+  not. If not, no route exists and the payment simply cannot be made.
+* The taker either has a node on the counter invoice's chain or does not.
+  If not, their own node finds no route and refuses.
+
+A wrong-chain invoice is **unpayable, not merely unwise.** The mismatch is
+caught by the impossibility of the payment, not by a field either side
+could have filled in wrongly.
+
+> **Which is why the `lnsb` problem does not bite here.** Every signet
+> invoice looks alike, and it does not matter: the taker's node cannot
+> reach a destination on a signet it has no channels into. Naming the
+> chain in a message would add a claim the recipient cannot verify and
+> does not need — they find out by trying.
+>
+> The residual case is a node key reused across two chains, where a route
+> might exist on the wrong one. That is the maker's own key and the
+> maker's own problem, and no field in a message would fix it.
 
 > **Why the first two are not enough, and why they are still worth
 > carrying.** `btc` does not say which network. `btc signet` does not say
@@ -110,9 +126,9 @@ the message is malformed and MUST be rejected rather than reconciled.
 > between them and the identifier is a useful signal that something is
 > wrong. They are documentation, checked but never trusted.
 
-All three elements are REQUIRED, including on mainnet. An omitted element
-that is "implied" is an element two implementations can imply
-differently.
+Asset references appear in **documentation and user interfaces**, where a
+human needs to know which chain they are dealing with. They are not part
+of any message in this protocol.
 
 The chain identifier is:
 
@@ -321,7 +337,7 @@ reconstruct the trade without holding session state.
   "tags": [
     ["p", "<recipient>"],
     ["a", "30200:<maker>:<offer id>"],
-    ["e", "<id of the message this answers>"]   // on confirm and abort
+    ["e", "<the exact event this answers>"]
   ],
   "content": "<NIP-44 encrypted payload>"
 }
@@ -340,17 +356,13 @@ The decrypted content is a JSON object with a `type`:
 ```jsonc
 {
   "type": "accept",
-  "sell": { "asset": "btc", "network": "signet", "chain": "<chain identifier>" },
-  "buy":  { "asset": "xbt", "network": "signet", "chain": "<chain identifier>" },
-  "destination_invoice": "lnbc...",
-  "buy_msat": 250000        // what the taker expects to pay
+  "destination_invoice": "lnbc..."
 }
 ```
 
-Both asset references MUST be complete. **This is where the chains enter
-the protocol** — the offer did not name them. The taker is asserting which
-two networks it believes it is trading between, and a maker that trades
-different ones MUST abort rather than interpret.
+One field. The offer and its exact version are in the tags; the amount
+and the payment hash are in the invoice; and **the chains need not be
+stated at all** — see below.
 
 **The destination invoice MUST specify an amount.** An amountless BOLT11
 invoice would leave the maker free to pay anything, and there would be
@@ -360,44 +372,25 @@ destination invoice carries no amount.
 That amount is not restated here — it is in the invoice, and the invoice
 is what the maker will pay.
 
-`buy_msat` is not in any invoice and is the one number the taker must
-state: **what they believe the price makes it.** The maker compares it
-against their own computation and aborts on a mismatch.
-
-> **Why `buy_msat` earns its place when the amount does not.** The maker
-> does not know which version of the offer the taker read. If the price
-> moved between publication and acceptance, or the two sides round the
-> parts-per-million division differently, `buy_msat` is where that
-> surfaces — cheaply, before an invoice exists. The destination amount
-> carries no such information: it is a fact the maker can read.
-
-A maker MUST verify both amounts against the live offer and MUST abort on
-any mismatch. A maker MUST NOT issue a counter invoice for an amount the
-taker did not state.
+The chains are not stated. The maker either has a node on the
+destination invoice's chain or does not, and if not the payment cannot be
+made at all — a claim in the message would not change that.
 
 #### `confirm`
 
 ```jsonc
 {
   "type": "confirm",
-  "buy": { "asset": "xbt", "network": "signet", "chain": "<chain identifier>" },
   "counter_invoice": "lnsb..."
 }
 ```
 
-Nothing else is carried. The amount, the payment hash and the final CLTV
-are all in the counter invoice, and the invoice is what the taker pays —
-restating them would create fields that can disagree with it, and a rule
-about which wins.
+Also one field. The amount, the payment hash and the final CLTV are in
+the counter invoice, and the invoice is what the taker pays; restating
+them would create fields that can disagree with it, and a rule about
+which wins.
 
-`buy` is the exception because **the invoice genuinely cannot say it**: a
-signet invoice's `lnsb` prefix is shared by every signet.
 
-`buy` MUST match the `buy` the taker stated in `accept`.
-
-A maker that trades a different chain from the one the taker named MUST
-abort. Confirming with a `buy` the taker did not ask for is how a taker
-ends up paying on a chain they did not choose.
 
 The counter invoice MUST be a **hold invoice**. A maker who issues an
 ordinary invoice will have it settled on receipt, before they hold `S`,
@@ -429,19 +422,18 @@ messages — and a party that has paid MUST NOT rely on one being honoured.
    and has no way to reason about capacity that is being consumed by
    someone else.
 
-2. **`buy_msat` is what the live offer's price yields** for the amount in
-   the destination invoice. A maker MUST abort on a mismatch and MUST NOT
-   issue a counter invoice for an amount the taker did not state — a
-   taker who is invoiced for more than they agreed has no way to tell
-   whether the price moved or the maker is helping themselves.
+2. **The `e` tag names the maker's current offer.** If it names an
+   earlier version, the taker acted on terms that no longer stand and the
+   maker MUST abort — serving the trade at the old price rewards a stale
+   read, and at the new one invoices for something the taker never agreed.
 
 3. **The offer is still live** — not withdrawn, and not revised since the
    taker read it.
 
-4. **The chains the taker named are the chains the maker trades**, and
-   the destination invoice is on the sell chain. A maker MUST NOT pay an
-   invoice whose network it has not verified, and MUST NOT rely on the
-   invoice's human-readable prefix to establish it.
+4. **The maker can actually pay the destination invoice.** A maker SHOULD
+   establish this before confirming rather than after being paid —
+   discovering it afterwards leaves the taker's funds held until timeout
+   for a trade that was never going to complete.
 
 ### Volume is advertised, not reserved
 
@@ -474,20 +466,15 @@ these are the rules that make moving it safe.
    counter invoice buys nothing. This is the single check that makes the
    trade atomic, and it is the one an implementation must never skip.
 
-2. **The counter invoice's amount equals the `buy_msat` the taker
-   stated**, which equals the offer's price applied to the destination
-   amount.
+2. **The counter invoice's amount is what the offer's price yields** for
+   the destination amount. This is the taker's only defence against being
+   invoiced for more than was advertised, and it MUST be checked against
+   the offer the taker read — the one its `e` tag named.
 
 3. **The counter invoice is a hold invoice.** An invoice that settles on
    receipt gives the maker the taker's funds before `S` exists.
 
-4. **The confirmed `buy` is the `buy` the taker stated**, and the counter
-   invoice is on that chain — verified against the chain identifier, not
-   against the invoice prefix. A taker holding channels on only one
-   network will find a wrong-chain invoice unpayable; a taker holding
-   several could pay on the wrong one.
-
-5. **The timelock rule below holds.**
+4. **The timelock rule below holds.**
 
 ## The timelock rule
 
