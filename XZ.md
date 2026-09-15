@@ -624,7 +624,10 @@ and cannot be reimbursed.
 expiry(counter invoice HTLC)  >  expiry(destination invoice HTLC)  +  Δ
 ```
 
-Δ covers routing and settlement latency on the destination's chain.
+Δ covers routing and settlement latency on the destination's chain. The
+right-hand side is the maker's whole obligation — the route **and** the
+final hop the destination demands — not the route alone; see *How the
+maker knows what to set*.
 
 > **Note who this protects.** Unlike a two-party swap, where the rule
 > protects the party without the secret, here it protects the **maker**.
@@ -656,7 +659,24 @@ moment:
 1. The destination invoice arrived in the `rfq`.
 2. So the maker can find their route to the destination and total its
    CLTV delta **before issuing anything**.
-3. The counter invoice's final CLTV is then set above that, plus Δ.
+3. The destination invoice also states the final CLTV its payee demands
+   of the last hop, and that is **not** part of the route delta.
+4. The counter invoice's final CLTV is then set above the sum of those
+   two, plus Δ.
+
+> **Step 3 is the one that gets dropped.** [`quote_payment`](nwc-route.md)
+> reports what the *route* consumes and excludes the invoice's own final
+> CLTV by definition — it is in the invoice, and the method does not
+> repeat it. A maker who takes that number as the whole obligation issues
+> a counter invoice whose HTLC can expire while the payment to the
+> destination is still in flight, which is precisely the ordering this
+> rule exists to prevent.
+>
+> The mistake is quiet: the two numbers are both CLTV deltas in blocks,
+> the smaller one alone is usually enough once Δ is generous, and the
+> trade completes anyway. It fails only when the margin was thin, which
+> is when it matters. Written down because the first implementation of
+> this rule made it.
 
 Whatever route the taker takes only *adds* delta on top of that floor, so
 the maker's incoming HTLC cannot arrive with less life than they asked
