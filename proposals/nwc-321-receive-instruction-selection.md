@@ -63,7 +63,7 @@ unchanged.
 
 We have run this shape in production-adjacent testing for some months
 under a different method name, in `dln-node` (Rust, LDK) and
-`nostr-nwc-ts` (TypeScript client), with a round-trip test that requests
+`nostr-js-nwc` (JavaScript client), with a round-trip test that requests
 `[bolt11, bolt12, onchain]` in one URI. We are adopting NWC-321's names
 now and would rather this lived upstream than in a local extension. Happy
 to open a PR if the shape looks reasonable.
