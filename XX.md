@@ -1495,7 +1495,7 @@ Values that are **valid**, and should not be rejected:
 > The check must instead be **absolute** — taken against the full cost,
 > before anything moves — which the pipeline cannot express today, because
 > the true cost exists only between step 4 and step 6. See
-> [nostr-ln#1](https://github.com/DarkWebDivingClub/nostr-ln/issues/1).
+> [nostr-ln#1](https://github.com/DarkWebDivingClub/nostr-rs-ln/issues/1).
 
 
 `quota` is a bucket like any other, and **one token is one satoshi**. What
